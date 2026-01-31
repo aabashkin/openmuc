@@ -96,11 +96,13 @@ public class DbConnector {
 
     /**
      * Starts up an H2 TCP server
+     * Note: Removed -webAllowOthers and -tcpAllowOthers flags for security.
+     * Only localhost connections are allowed by default.
      */
     public void startH2Server() {
         try {
             logger.info("Starting H2 Server");
-            server = Server.createTcpServer("-webAllowOthers", "-tcpAllowOthers").start();
+            server = Server.createTcpServer().start();
         } catch (SQLException e) {
             logger.error(e.getMessage());
         }
@@ -160,7 +162,7 @@ public class DbConnector {
                 logger.error(MessageFormat.format("SQLException: {0}", e.getMessage()));
                 logger.error(MessageFormat.format("SQLState:     {0}", e.getSQLState()));
                 logger.error(MessageFormat.format("VendorError:  {0}", e.getErrorCode()));
-                e.printStackTrace();
+                logger.error("Database connection error", e);
             }
             if (url.contains("h2") && e.getErrorCode() == 90030) {
                 renameCorruptedDb();
@@ -268,20 +270,25 @@ public class DbConnector {
     private void updateTimescale() {
         try {
             String line;
-            String[] cmd = new String[3];
             int startPoint = url.lastIndexOf('/');
             String dbName = url.substring(startPoint + 1);
-            if (System.getProperty("os.name").toLowerCase().startsWith("windows")) {
-                cmd[0] = "cmd.exe";
+            
+            // Validate dbName to prevent command injection
+            if (!dbName.matches("[a-zA-Z0-9_-]+")) {
+                logger.error("Invalid database name: contains potentially unsafe characters");
+                return;
             }
-            else {
-                cmd[0] = "sh";
-            }
+            
             PropertyHandler propertyHandler = PropertyHandlerProvider.getInstance().getPropertyHandler();
-            cmd[1] = "-c";
-            cmd[2] = "PGPASSWORD=" + propertyHandler.getString(Settings.PSQL_PASS)
-                    + " psql -c 'ALTER EXTENSION timescaledb UPDATE;'  -U postgres -h localhost -d " + dbName;
-            Process process = Runtime.getRuntime().exec(cmd);
+            String password = propertyHandler.getString(Settings.PSQL_PASS);
+            
+            // Use ProcessBuilder for safer command execution
+            ProcessBuilder processBuilder = new ProcessBuilder();
+            processBuilder.environment().put("PGPASSWORD", password);
+            processBuilder.command("psql", "-c", "ALTER EXTENSION timescaledb UPDATE;", 
+                                 "-U", "postgres", "-h", "localhost", "-d", dbName);
+            
+            Process process = processBuilder.start();
 
             BufferedReader stdOutReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
             while ((line = stdOutReader.readLine()) != null) {

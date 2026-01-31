@@ -128,10 +128,25 @@ public class DbAccess {
         if (url.contains(POSTGRESQL)) {
             table = table.toLowerCase();
         }
+        
+        // Validate table and column names to prevent SQL injection
+        if (!isValidIdentifier(table)) {
+            logger.error("Invalid table name: " + table);
+            return columnsLength;
+        }
+        
         for (String column : columns) {
+            if (!isValidIdentifier(column)) {
+                logger.error("Invalid column name: " + column);
+                columnsLength.add(0);
+                continue;
+            }
+            
             StringBuilder sbVarcharLength = new StringBuilder();
             sbVarcharLength.append("select character_maximum_length from information_schema.columns")
-                    .append(" where table_name = '" + table + "' AND column_name = '" + column.toLowerCase() + "';");
+                    .append(" where table_name = '").append(sanitizeIdentifier(table))
+                    .append("' AND column_name = '").append(sanitizeIdentifier(column.toLowerCase()))
+                    .append("';");
 
             try {
                 if (!dbConnector.isConnected()) {
@@ -146,6 +161,26 @@ public class DbAccess {
             }
         }
         return columnsLength;
+    }
+    
+    /**
+     * Validates SQL identifier (table/column name) to prevent SQL injection
+     * @param identifier the identifier to validate
+     * @return true if the identifier is safe to use
+     */
+    private boolean isValidIdentifier(String identifier) {
+        // Allow only alphanumeric characters, underscores, and hyphens
+        return identifier != null && identifier.matches("[a-zA-Z0-9_-]+");
+    }
+    
+    /**
+     * Sanitizes SQL identifier by escaping single quotes
+     * @param identifier the identifier to sanitize
+     * @return sanitized identifier
+     */
+    private String sanitizeIdentifier(String identifier) {
+        // Escape single quotes to prevent SQL injection
+        return identifier.replace("'", "''");
     }
 
     public void closeConnection() {
