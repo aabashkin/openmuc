@@ -142,19 +142,26 @@ public class DbAccess {
                 continue;
             }
             
-            StringBuilder sbVarcharLength = new StringBuilder();
-            sbVarcharLength.append("select character_maximum_length from information_schema.columns")
-                    .append(" where table_name = '").append(sanitizeIdentifier(table))
-                    .append("' AND column_name = '").append(sanitizeIdentifier(column.toLowerCase()))
-                    .append("';");
+            // Use PreparedStatement to prevent SQL injection
+            String sql = "select character_maximum_length from information_schema.columns " +
+                        "where table_name = ? AND column_name = ?";
 
             try {
                 if (!dbConnector.isConnected()) {
                     dbConnector.getConnectionToDb();
                 }
-                ResultSet rsLength = executeQuery(sbVarcharLength);
-                rsLength.next();
-                columnsLength.add(rsLength.getInt(1));
+                try (java.sql.PreparedStatement pstmt = dbConnector.createPreparedStatementWithConnection(sql)) {
+                    pstmt.setString(1, table);
+                    pstmt.setString(2, column.toLowerCase());
+                    
+                    try (ResultSet rsLength = pstmt.executeQuery()) {
+                        if (rsLength.next()) {
+                            columnsLength.add(rsLength.getInt(1));
+                        } else {
+                            columnsLength.add(0);
+                        }
+                    }
+                }
             } catch (SQLException e) {
                 logger.debug(e.getMessage());
                 columnsLength.add(0);
@@ -169,18 +176,8 @@ public class DbAccess {
      * @return true if the identifier is safe to use
      */
     private boolean isValidIdentifier(String identifier) {
-        // Allow only alphanumeric characters, underscores, and hyphens
-        return identifier != null && identifier.matches("[a-zA-Z0-9_-]+");
-    }
-    
-    /**
-     * Sanitizes SQL identifier by escaping single quotes
-     * @param identifier the identifier to sanitize
-     * @return sanitized identifier
-     */
-    private String sanitizeIdentifier(String identifier) {
-        // Escape single quotes to prevent SQL injection
-        return identifier.replace("'", "''");
+        // Allow only alphanumeric characters and underscores (standard SQL identifiers)
+        return identifier != null && identifier.matches("[a-zA-Z0-9_]+");
     }
 
     public void closeConnection() {

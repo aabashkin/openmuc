@@ -119,6 +119,10 @@ public class DbConnector {
     public Statement createStatementWithConnection() throws SQLException {
         return connection.createStatement();
     }
+    
+    public java.sql.PreparedStatement createPreparedStatementWithConnection(String sql) throws SQLException {
+        return connection.prepareStatement(sql);
+    }
 
     /**
      * Sets the proper dataSourceFactory, depending on the URL, using {@link #setDataSourceFactory()} and creates a
@@ -274,7 +278,7 @@ public class DbConnector {
             String dbName = url.substring(startPoint + 1);
             
             // Validate dbName to prevent command injection
-            if (!dbName.matches("[a-zA-Z0-9_-]+")) {
+            if (!dbName.matches("[a-zA-Z0-9_]+")) {
                 logger.error("Invalid database name: contains potentially unsafe characters");
                 return;
             }
