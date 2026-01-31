@@ -128,24 +128,56 @@ public class DbAccess {
         if (url.contains(POSTGRESQL)) {
             table = table.toLowerCase();
         }
+        
+        // Validate table and column names to prevent SQL injection
+        if (!isValidIdentifier(table)) {
+            logger.error("Invalid table name: " + table);
+            return columnsLength;
+        }
+        
         for (String column : columns) {
-            StringBuilder sbVarcharLength = new StringBuilder();
-            sbVarcharLength.append("select character_maximum_length from information_schema.columns")
-                    .append(" where table_name = '" + table + "' AND column_name = '" + column.toLowerCase() + "';");
+            if (!isValidIdentifier(column)) {
+                logger.error("Invalid column name: " + column);
+                columnsLength.add(0);
+                continue;
+            }
+            
+            // Use PreparedStatement to prevent SQL injection
+            String sql = "select character_maximum_length from information_schema.columns " +
+                        "where table_name = ? AND column_name = ?";
 
             try {
                 if (!dbConnector.isConnected()) {
                     dbConnector.getConnectionToDb();
                 }
-                ResultSet rsLength = executeQuery(sbVarcharLength);
-                rsLength.next();
-                columnsLength.add(rsLength.getInt(1));
+                try (java.sql.PreparedStatement pstmt = dbConnector.createPreparedStatementWithConnection(sql)) {
+                    pstmt.setString(1, table);
+                    pstmt.setString(2, column.toLowerCase());
+                    
+                    try (ResultSet rsLength = pstmt.executeQuery()) {
+                        if (rsLength.next()) {
+                            columnsLength.add(rsLength.getInt(1));
+                        } else {
+                            columnsLength.add(0);
+                        }
+                    }
+                }
             } catch (SQLException e) {
                 logger.debug(e.getMessage());
                 columnsLength.add(0);
             }
         }
         return columnsLength;
+    }
+    
+    /**
+     * Validates SQL identifier (table/column name) to prevent SQL injection
+     * @param identifier the identifier to validate
+     * @return true if the identifier is safe to use
+     */
+    private boolean isValidIdentifier(String identifier) {
+        // Allow only alphanumeric characters and underscores (standard SQL identifiers)
+        return identifier != null && identifier.matches("[a-zA-Z0-9_]+");
     }
 
     public void closeConnection() {
